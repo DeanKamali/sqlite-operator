@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -37,6 +38,24 @@ import (
 
 	databasev1alpha1 "github.com/sqlite-operator/sqlite-operator/api/v1alpha1"
 )
+
+// LitestreamConfig represents the Litestream configuration structure
+type LitestreamConfig struct {
+	DBs []LitestreamDB `yaml:"dbs"`
+}
+
+type LitestreamDB struct {
+	Path    string            `yaml:"path"`
+	Replica LitestreamReplica `yaml:"replica"`
+}
+
+type LitestreamReplica struct {
+	URL                    string  `yaml:"url"`
+	Region                 *string `yaml:"region,omitempty"`
+	Retention              *string `yaml:"retention,omitempty"`
+	RetentionCheckInterval *string `yaml:"retention-check-interval,omitempty"`
+	Endpoint               *string `yaml:"endpoint,omitempty"`
+}
 
 // SqliteDatabaseReconciler reconciles a SqliteDatabase object
 type SqliteDatabaseReconciler struct {
@@ -244,34 +263,49 @@ func (r *SqliteDatabaseReconciler) reconcileLitestreamConfig(ctx context.Context
 
 // buildLitestreamConfig generates the Litestream configuration YAML
 func (r *SqliteDatabaseReconciler) buildLitestreamConfig(sqliteDB *databasev1alpha1.SqliteDatabase) string {
-	var replicas []string
+	var dbs []LitestreamDB
 
 	for _, replica := range sqliteDB.Spec.Litestream.Replicas {
 		url := r.buildReplicaURL(replica)
-		replicaConfig := fmt.Sprintf("- url: %s", url)
+
+		litestreamReplica := LitestreamReplica{
+			URL: url,
+		}
 
 		if replica.Region != nil {
-			replicaConfig += fmt.Sprintf("\n  region: %s", *replica.Region)
+			litestreamReplica.Region = replica.Region
 		}
 		if replica.Retention != nil {
-			replicaConfig += fmt.Sprintf("\n  retention: %s", *replica.Retention)
+			litestreamReplica.Retention = replica.Retention
 		}
 		if replica.RetentionCheckInterval != nil {
-			replicaConfig += fmt.Sprintf("\n  retention-check-interval: %s", *replica.RetentionCheckInterval)
+			litestreamReplica.RetentionCheckInterval = replica.RetentionCheckInterval
 		}
 		if replica.Endpoint != nil {
-			replicaConfig += fmt.Sprintf("\n  endpoint: %s", *replica.Endpoint)
+			litestreamReplica.Endpoint = replica.Endpoint
 		}
 
-		replicas = append(replicas, replicaConfig)
+		db := LitestreamDB{
+			Path:    fmt.Sprintf("/var/lib/sqlite/%s", sqliteDB.Spec.Database.Name),
+			Replica: litestreamReplica,
+		}
+
+		dbs = append(dbs, db)
 	}
 
-	config := fmt.Sprintf(`dbs:
-  - path: /var/lib/sqlite/%s
-    replicas:
-%s`, sqliteDB.Spec.Database.Name, strings.Join(replicas, "\n"))
+	config := LitestreamConfig{
+		DBs: dbs,
+	}
 
-	return config
+	yamlBytes, err := yaml.Marshal(config)
+	if err != nil {
+		// Fallback to simple string format if YAML marshaling fails
+		return fmt.Sprintf("dbs:\n  - path: /var/lib/sqlite/%s\n    replica:\n      url: %s",
+			sqliteDB.Spec.Database.Name,
+			r.buildReplicaURL(sqliteDB.Spec.Litestream.Replicas[0]))
+	}
+
+	return string(yamlBytes)
 }
 
 // buildReplicaURL builds the URL for a replica based on its type
@@ -605,6 +639,12 @@ func (r *SqliteDatabaseReconciler) buildSqliteRestArgs(sqliteDB *databasev1alpha
 	for _, table := range sqliteDB.Spec.SqliteRest.AllowedTables {
 		args = append(args, "--security-allow-table", table)
 	}
+
+	if sqliteDB.Spec.SqliteRest.AuthSecret != nil {
+		args = append(args, "--auth-token-file", "/etc/auth/token")
+	}
+	// Note: sqlite-rest does not have a --no-auth flag
+	// If no auth is configured, the server will run without authentication
 
 	return args
 }
