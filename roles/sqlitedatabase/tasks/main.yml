@@ -1,19 +1,23 @@
 ---
 # tasks file for SqliteDatabase
 
+- name: Debug all variables
+  debug:
+    msg: "All variables: {{ vars.keys() | list }}"
+
 - name: Set default values
   set_fact:
-    database_name: "{{ ansible_operator_spec.database.name | default('database.db') }}"
-    database_size: "{{ ansible_operator_spec.database.storage.size | default('1Gi') }}"
-    database_storage_class: "{{ ansible_operator_spec.database.storage.storageClass | default('wasabi-us-east-1') }}"
-    litestream_enabled: "{{ ansible_operator_spec.litestream.enabled | default(true) }}"
-    sqlite_rest_enabled: "{{ ansible_operator_spec.sqliteRest.enabled | default(true) }}"
-    sqlite_rest_port: "{{ ansible_operator_spec.sqliteRest.port | default(8080) | int }}"
-    sqlite_rest_metrics_port: "{{ ansible_operator_spec.sqliteRest.metrics.port | default(8081) | int }}"
-    ingress_enabled: "{{ ansible_operator_spec.ingress.enabled | default(false) }}"
-    ingress_host: "{{ ansible_operator_spec.ingress.host | default('') }}"
-    ingress_tls_enabled: "{{ ansible_operator_spec.ingress.tls.enabled | default(false) }}"
-    ingress_tls_secret: "{{ ansible_operator_spec.ingress.tls.secretName | default('') }}"
+    database_name: "{{ database.name | default('database.db') }}"
+    database_size: "{{ database.storage.size | default('1Gi') }}"
+    database_storage_class: "{{ database.storage.storageClass | default('wasabi-us-east-1') }}"
+    litestream_enabled: "{{ litestream.enabled | default(true) }}"
+    sqlite_rest_enabled: "{{ sqlite_rest.enabled | default(true) }}"
+    sqlite_rest_port: "{{ sqlite_rest.port | default(8080) | int }}"
+    sqlite_rest_metrics_port: "{{ sqlite_rest.metrics.port | default(8081) | int }}"
+    ingress_enabled: "{{ ingress.enabled | default(false) }}"
+    ingress_host: "{{ ingress.host | default('') }}"
+    ingress_tls_enabled: "{{ ingress.tls.enabled | default(false) }}"
+    ingress_tls_secret: "{{ ingress.tls.secretName | default('') }}"
 
 
 - name: Create PersistentVolumeClaim for database storage
@@ -23,11 +27,11 @@
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: "{{ ansible_operator_meta.name }}-db-storage"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}-db-storage"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
       spec:
         accessModes:
@@ -42,12 +46,13 @@
   set_fact:
     litestream_replicas_config: "{{ litestream_replicas_config | default([]) + [item_config] }}"
   vars:
-    item_config:
+    base_config:
       type: "{{ item.type }}"
       url: "{{ litestream_url }}"
       region: "{{ item.region | default(omit) }}"
       retention: "{{ item.retention | default(omit) }}"
       retention-check-interval: "{{ item.retentionCheckInterval | default(omit) }}"
+    item_config: "{{ base_config | combine({'endpoint': litestream_endpoint}) if litestream_endpoint else base_config }}"
     litestream_url: >-
       {%- if item.type == 's3' -%}
       s3://{{ item.bucket }}/{{ item.path | default('') }}
@@ -58,7 +63,11 @@
       {%- elif item.type == 'local' -%}
       file:///backups/{{ item.path | default('') }}
       {%- endif -%}
-  loop: "{{ ansible_operator_spec.litestream.replicas | default([]) }}"
+    litestream_endpoint: >-
+      {%- if item.type == 's3' and item.endpoint is defined -%}
+      https://s3.{{ item.region }}.{{ item.endpoint }}
+      {%- endif -%}
+  loop: "{{ litestream.replicas | default([]) }}"
   when: litestream_enabled | bool
 
 - name: Build Litestream configuration YAML
@@ -67,7 +76,7 @@
       dbs:
         - path: /var/lib/sqlite/{{ database_name }}
           replicas:
-      {{ litestream_replicas_config | to_nice_yaml(indent=2) | indent(6, first=False) }}
+      {{ litestream_replicas_config | to_nice_yaml(indent=2) | indent(6) }}
   when: litestream_enabled | bool and litestream_replicas_config is defined
 
 - name: Create ConfigMap for Litestream configuration
@@ -77,11 +86,11 @@
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: "{{ ansible_operator_meta.name }}-litestream-config"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}-litestream-config"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
       data:
         litestream.yml: "{{ litestream_config_yaml }}"
@@ -94,11 +103,11 @@
       apiVersion: v1
       kind: Secret
       metadata:
-        name: "{{ ansible_operator_meta.name }}-litestream-credentials"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}-litestream-credentials"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
       type: Opaque
       stringData:
@@ -110,9 +119,9 @@
     sqlite_rest_config:
       server:
         addr: ":{{ sqlite_rest_port }}"
-        auth-token-file: "{{ '/etc/auth/token' if spec.sqliteRest.authSecret is defined else omit }}"
-        security-allow-table: "{{ ansible_operator_spec.sqliteRest.allowedTables | join(',') if spec.sqliteRest.allowedTables is defined else omit }}"
-        metrics-addr: "{{ ':' + (sqlite_rest_metrics_port | string) if (spec.sqliteRest.metrics.enabled | default(true)) else '' }}"
+        auth-token-file: "{{ '/etc/auth/token' if sqliteRest.authSecret is defined else omit }}"
+        security-allow-table: "{{ sqliteRest.allowedTables | join(',') if sqliteRest.allowedTables is defined else omit }}"
+        metrics-addr: "{{ ':' + (sqlite_rest_metrics_port | string) if (sqliteRest.metrics.enabled | default(true)) else '' }}"
       database:
         dsn: "/var/lib/sqlite/{{ database_name }}"
   when: sqlite_rest_enabled | bool
@@ -124,11 +133,11 @@
       apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: "{{ ansible_operator_meta.name }}-sqlite-rest-config"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}-sqlite-rest-config"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
       data:
         sqlite-rest.yml: "{{ sqlite_rest_config | to_nice_yaml }}"
@@ -141,23 +150,23 @@
       apiVersion: v1
       kind: Secret
       metadata:
-        name: "{{ ansible_operator_meta.name }}-sqlite-rest-auth"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}-sqlite-rest-auth"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
       type: Opaque
       data:
         token: "{{ 'dGVzdC10b2tlbg==' }}"  # base64 encoded "test-token"
-  when: sqlite_rest_enabled | bool and spec.sqliteRest.authSecret is not defined
+  when: sqlite_rest_enabled | bool and sqliteRest.authSecret is not defined
 
 - name: Build SQLite container init script
   set_fact:
     sqlite_init_script: |
       set -e
       mkdir -p /var/lib/sqlite
-      {% if spec.database.initScript is defined %}
+      {% if database.initScript is defined %}
       if [ ! -f /var/lib/sqlite/{{ database_name }} ]; then
         echo "Initializing database with init script..."
         sqlite3 /var/lib/sqlite/{{ database_name }} < /init/init.sql
@@ -183,7 +192,7 @@
       volumeMounts:
         - name: db-storage
           mountPath: /var/lib/sqlite
-      resources: "{{ ansible_operator_spec.resources | default({}) }}"
+      resources: "{{ resources | default({}) }}"
 
 - name: Add init script volume mount to SQLite container
   set_fact:
@@ -192,7 +201,7 @@
     init_mount:
       name: init-script
       mountPath: /init
-  when: ansible_operator_spec.database.initScript is defined
+  when: database.initScript is defined
 
 - name: Build Litestream container environment variables
   set_fact:
@@ -202,14 +211,14 @@
       - name: LITESTREAM_ACCESS_KEY_ID
         valueFrom:
           secretKeyRef:
-            name: "{{ item.credentials.secretName }}"
-            key: "{{ item.credentials.accessKeyField | default('access-key') }}"
+            name: "{{ item.credentials.secret_name }}"
+            key: "{{ item.credentials.access_key_field | default('access-key') }}"
       - name: LITESTREAM_SECRET_ACCESS_KEY
         valueFrom:
           secretKeyRef:
-            name: "{{ item.credentials.secretName }}"
-            key: "{{ item.credentials.secretKeyField | default('secret-key') }}"
-  loop: "{{ ansible_operator_spec.litestream.replicas | default([]) }}"
+            name: "{{ item.credentials.secret_name }}"
+            key: "{{ item.credentials.secret_key_field | default('secret-key') }}"
+  loop: "{{ litestream.replicas | default([]) }}"
   when: litestream_enabled | bool and item.credentials is defined
 
 - name: Build Litestream container definition
@@ -237,15 +246,32 @@
 - name: Add metrics port to sqlite-rest
   set_fact:
     sqlite_rest_ports: "{{ sqlite_rest_ports + [{'name': 'metrics', 'containerPort': sqlite_rest_metrics_port | int}] }}"
-  when: sqlite_rest_enabled | bool and (spec.sqliteRest.metrics.enabled | default(true))
+  when: sqlite_rest_enabled | bool and (sqliteRest.metrics.enabled | default(true))
+
+- name: Build sqlite-rest container arguments
+  set_fact:
+    sqlite_rest_args:
+      - "serve"
+      - "--db-dsn"
+      - "/var/lib/sqlite/{{ database_name }}"
+      - "--http-addr"
+      - ":{{ sqlite_rest_port }}"
+      - "--metrics-addr"
+      - ":{{ sqlite_rest_metrics_port }}"
+  when: sqlite_rest_enabled | bool
+
+- name: Add allowed tables to sqlite-rest args
+  set_fact:
+    sqlite_rest_args: "{{ sqlite_rest_args + ['--security-allow-table', item] }}"
+  loop: "{{ sqlite_rest.allowedTables | default([]) }}"
+  when: sqlite_rest_enabled | bool and sqlite_rest.allowedTables is defined
 
 - name: Build sqlite-rest container definition
   set_fact:
     sqlite_rest_container:
       name: sqlite-rest
       image: "ghcr.io/b4fun/sqlite-rest/server:main"
-      command: ["sqlite-rest"]
-      args: ["serve", "--database", "/var/lib/sqlite/{{ database_name }}", "--port", "{{ sqlite_rest_port }}"]
+      args: "{{ sqlite_rest_args }}"
       ports: "{{ sqlite_rest_ports }}"
       volumeMounts:
         - name: db-storage
@@ -271,7 +297,7 @@
     deployment_volumes:
       - name: db-storage
         persistentVolumeClaim:
-          claimName: "{{ ansible_operator_meta.name }}-db-storage"
+          claimName: "{{ meta.name }}-db-storage"
 
 - name: Add init script volume
   set_fact:
@@ -280,8 +306,8 @@
     init_volume:
       name: init-script
       configMap:
-        name: "{{ ansible_operator_spec.database.initScript }}"
-  when: ansible_operator_spec.database.initScript is defined
+        name: "{{ database.initScript }}"
+  when: database.initScript is defined
 
 - name: Add Litestream volumes
   set_fact:
@@ -290,10 +316,10 @@
     litestream_volumes:
       - name: litestream-config
         configMap:
-          name: "{{ ansible_operator_meta.name }}-litestream-config"
+          name: "{{ meta.name }}-litestream-config"
       - name: litestream-credentials
         secret:
-          secretName: "{{ ansible_operator_meta.name }}-litestream-credentials"
+          secretName: "{{ meta.name }}-litestream-credentials"
   when: litestream_enabled | bool
 
 - name: Add sqlite-rest volumes
@@ -303,10 +329,10 @@
     sqlite_rest_volumes:
       - name: sqlite-rest-config
         configMap:
-          name: "{{ ansible_operator_meta.name }}-sqlite-rest-config"
+          name: "{{ meta.name }}-sqlite-rest-config"
       - name: sqlite-rest-auth
         secret:
-          secretName: "{{ ansible_operator_meta.name }}-sqlite-rest-auth"
+          secretName: "{{ meta.name }}-sqlite-rest-auth"
   when: sqlite_rest_enabled | bool
 
 - name: Create Deployment for SQLite + Litestream + sqlite-rest
@@ -316,23 +342,23 @@
       apiVersion: apps/v1
       kind: Deployment
       metadata:
-        name: "{{ ansible_operator_meta.name }}"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
       spec:
         replicas: 1
         selector:
           matchLabels:
             app.kubernetes.io/name: sqlite-database
-            app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+            app.kubernetes.io/instance: "{{ meta.name }}"
         template:
           metadata:
             labels:
               app.kubernetes.io/name: sqlite-database
-              app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+              app.kubernetes.io/instance: "{{ meta.name }}"
           spec:
             containers: "{{ deployment_containers }}"
             volumes: "{{ deployment_volumes }}"
@@ -342,19 +368,14 @@
   set_fact:
     service_ports:
       - name: http
-        port: "{{ sqlite_rest_port }}"
-        targetPort: "{{ sqlite_rest_port }}"
+        port: 8080
+        targetPort: 8080
   when: sqlite_rest_enabled | bool
 
 - name: Add metrics port to Service
   set_fact:
-    service_ports: "{{ service_ports + [metrics_port] }}"
-  vars:
-    metrics_port:
-      name: metrics
-      port: "{{ sqlite_rest_metrics_port }}"
-      targetPort: "{{ sqlite_rest_metrics_port }}"
-  when: sqlite_rest_enabled | bool and (spec.sqliteRest.metrics.enabled | default(true))
+    service_ports: "{{ service_ports + [{'name': 'metrics', 'port': 8081, 'targetPort': 8081}] }}"
+  when: sqlite_rest_enabled | bool and (sqlite_rest.metrics.enabled | default(true))
 
 - name: Create Service for sqlite-rest
   kubernetes.core.k8s:
@@ -363,16 +384,16 @@
       apiVersion: v1
       kind: Service
       metadata:
-        name: "{{ ansible_operator_meta.name }}-service"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}-service"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
       spec:
         selector:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
         ports: "{{ service_ports }}"
         type: ClusterIP
   when: sqlite_rest_enabled | bool and service_ports is defined
@@ -397,7 +418,7 @@
                 pathType: Prefix
                 backend:
                   service:
-                    name: "{{ ansible_operator_meta.name }}-service"
+                    name: "{{ meta.name }}-service"
                     port:
                       number: "{{ sqlite_rest_port }}"
   when: ingress_enabled | bool and ingress_host != ""
@@ -409,11 +430,11 @@
       apiVersion: networking.k8s.io/v1
       kind: Ingress
       metadata:
-        name: "{{ ansible_operator_meta.name }}-ingress"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}-ingress"
+        namespace: "{{ meta.namespace }}"
         labels:
           app.kubernetes.io/name: sqlite-database
-          app.kubernetes.io/instance: "{{ ansible_operator_meta.name }}"
+          app.kubernetes.io/instance: "{{ meta.name }}"
           app.kubernetes.io/managed-by: sqlite-operator
         annotations: "{{ {'cert-manager.io/cluster-issuer': 'letsencrypt-prod'} if (ingress_tls_enabled | bool and ingress_tls_secret) else {} }}"
       spec: "{{ ingress_spec }}"
@@ -422,14 +443,14 @@
 - name: Build status endpoints
   set_fact:
     status_endpoints:
-      rest: "http://{{ ansible_operator_meta.name }}-service.{{ ansible_operator_meta.namespace }}.svc.cluster.local:{{ sqlite_rest_port }}"
+      rest: "http://{{ meta.name }}-service.{{ meta.namespace }}.svc.cluster.local:{{ sqlite_rest_port }}"
 
 - name: Add metrics endpoint to status
   set_fact:
     status_endpoints: "{{ status_endpoints | combine({'metrics': metrics_url}) }}"
   vars:
-    metrics_url: "http://{{ ansible_operator_meta.name }}-service.{{ ansible_operator_meta.namespace }}.svc.cluster.local:{{ sqlite_rest_metrics_port }}"
-  when: sqlite_rest_enabled | bool and (spec.sqliteRest.metrics.enabled | default(true))
+    metrics_url: "http://{{ meta.name }}-service.{{ meta.namespace }}.svc.cluster.local:{{ sqlite_rest_metrics_port }}"
+  when: sqlite_rest_enabled | bool and (sqliteRest.metrics.enabled | default(true))
 
 - name: Update status
   kubernetes.core.k8s:
@@ -438,8 +459,8 @@
       apiVersion: database.sqlite.io/v1alpha1
       kind: SqliteDatabase
       metadata:
-        name: "{{ ansible_operator_meta.name }}"
-        namespace: "{{ ansible_operator_meta.namespace }}"
+        name: "{{ meta.name }}"
+        namespace: "{{ meta.namespace }}"
       status:
         phase: "Running"
         message: "Database is running successfully"

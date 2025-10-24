@@ -79,6 +79,9 @@ spec:
                         region:
                           type: string
                           description: Region for S3/GCS
+                        endpoint:
+                          type: string
+                          description: Custom S3 endpoint (e.g., wasabisys.com for Wasabi)
                         path:
                           type: string
                           description: Path within the bucket/container
