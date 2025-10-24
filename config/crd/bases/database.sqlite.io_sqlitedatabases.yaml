@@ -2,6 +2,8 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
   name: sqlitedatabases.database.sqlite.io
 spec:
   group: database.sqlite.io
@@ -15,200 +17,349 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: SqliteDatabase is the Schema for the sqlitedatabases API
+        description: SqliteDatabase is the Schema for the sqlitedatabases API.
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
           spec:
-            description: Spec defines the desired state of SqliteDatabase
-            type: object
+            description: SqliteDatabaseSpec defines the desired state of SqliteDatabase.
             properties:
               database:
-                type: object
-                description: SQLite database configuration
+                description: Database configuration
                 properties:
-                  name:
-                    type: string
-                    description: Name of the SQLite database file
-                    default: "database.db"
                   initScript:
-                    type: string
                     description: Name of ConfigMap containing SQL initialization script
+                    type: string
+                  name:
+                    default: database.db
+                    description: Name of the SQLite database file
+                    type: string
                   storage:
-                    type: object
                     description: Storage configuration for the database
                     properties:
                       size:
-                        type: string
+                        default: 1Gi
                         description: Size of the persistent volume
-                        default: "1Gi"
-                      storageClass:
+                        pattern: ^([0-9]+(\.[0-9]+)?(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)?)$
                         type: string
+                      storageClass:
                         description: Storage class for the persistent volume
-              litestream:
-                type: object
-                description: Litestream replication configuration
-                properties:
-                  enabled:
-                    type: boolean
-                    description: Enable Litestream replication
-                    default: true
-                  replicas:
-                    type: array
-                    description: List of replication targets
-                    items:
-                      type: object
-                      properties:
-                        type:
-                          type: string
-                          enum: ["s3", "azure", "gcs", "local"]
-                          description: Type of storage backend
-                        bucket:
-                          type: string
-                          description: Bucket name for S3/GCS or container name for Azure
-                        region:
-                          type: string
-                          description: Region for S3/GCS
-                        endpoint:
-                          type: string
-                          description: Custom S3 endpoint (e.g., wasabisys.com for Wasabi)
-                        path:
-                          type: string
-                          description: Path within the bucket/container
-                        credentials:
-                          type: object
-                          description: Credentials for the storage backend
-                          properties:
-                            secretName:
-                              type: string
-                              description: Name of the Secret containing credentials
-                            accessKeyField:
-                              type: string
-                              description: Field name for access key in the secret
-                              default: "access-key"
-                            secretKeyField:
-                              type: string
-                              description: Field name for secret key in the secret
-                              default: "secret-key"
-                        retention:
-                          type: string
-                          description: Retention period for backups
-                          default: "24h"
-                        retentionCheckInterval:
-                          type: string
-                          description: How often to check for expired backups
-                          default: "1h"
-              sqliteRest:
-                type: object
-                description: sqlite-rest API configuration
-                properties:
-                  enabled:
-                    type: boolean
-                    description: Enable sqlite-rest API
-                    default: true
-                  port:
-                    type: integer
-                    description: Port for sqlite-rest API
-                    default: 8080
-                  authSecret:
-                    type: string
-                    description: Name of Secret containing JWT token/key
-                  allowedTables:
-                    type: array
-                    items:
-                      type: string
-                    description: List of tables allowed for API access
-                  metrics:
+                        type: string
+                    required:
+                    - size
                     type: object
-                    description: Metrics configuration
-                    properties:
-                      enabled:
-                        type: boolean
-                        default: true
-                      port:
-                        type: integer
-                        default: 8081
-              ingress:
+                required:
+                - name
+                - storage
                 type: object
+              ingress:
                 description: Ingress configuration for external access
                 properties:
                   enabled:
-                    type: boolean
-                    description: Enable Ingress
                     default: false
+                    description: Enable Ingress
+                    type: boolean
                   host:
-                    type: string
                     description: Hostname for the Ingress
+                    type: string
                   tls:
-                    type: object
                     description: TLS configuration
                     properties:
                       enabled:
-                        type: boolean
                         default: false
+                        description: Enable TLS
+                        type: boolean
                       secretName:
-                        type: string
                         description: Name of TLS secret
-              resources:
+                        type: string
+                    required:
+                    - enabled
+                    type: object
+                required:
+                - enabled
                 type: object
+              litestream:
+                description: Litestream replication configuration
+                properties:
+                  enabled:
+                    default: true
+                    description: Enable Litestream replication
+                    type: boolean
+                  replicas:
+                    description: List of replication targets
+                    items:
+                      description: ReplicaConfig defines individual replica configuration
+                      properties:
+                        bucket:
+                          description: Bucket name for S3/GCS or container name for
+                            Azure
+                          type: string
+                        credentials:
+                          description: Credentials for the storage backend
+                          properties:
+                            accessKeyField:
+                              default: access-key
+                              description: Field name for access key in the secret
+                              type: string
+                            secretKeyField:
+                              default: secret-key
+                              description: Field name for secret key in the secret
+                              type: string
+                            secretName:
+                              description: Name of the Secret containing credentials
+                              type: string
+                          required:
+                          - secretName
+                          type: object
+                        endpoint:
+                          description: Custom S3 endpoint (e.g., wasabisys.com for
+                            Wasabi)
+                          type: string
+                        path:
+                          description: Path within the bucket/container
+                          type: string
+                        region:
+                          description: Region for S3/GCS
+                          type: string
+                        retention:
+                          default: 24h
+                          description: Retention period for backups
+                          type: string
+                        retentionCheckInterval:
+                          default: 1h
+                          description: How often to check for expired backups
+                          type: string
+                        type:
+                          description: Type of storage backend
+                          enum:
+                          - s3
+                          - azure
+                          - gcs
+                          - local
+                          type: string
+                      required:
+                      - bucket
+                      - type
+                      type: object
+                    type: array
+                required:
+                - enabled
+                type: object
+              resources:
                 description: Resource requirements for the pod
                 properties:
-                  requests:
-                    type: object
-                    properties:
-                      cpu:
-                        type: string
-                        default: "100m"
-                      memory:
-                        type: string
-                        default: "128Mi"
+                  claims:
+                    description: |-
+                      Claims lists the names of resources, defined in spec.resourceClaims,
+                      that are used by this container.
+
+                      This is an alpha field and requires enabling the
+                      DynamicResourceAllocation feature gate.
+
+                      This field is immutable. It can only be set for containers.
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: |-
+                            Name must match the name of one entry in pod.spec.resourceClaims of
+                            the Pod where this field is used. It makes that resource available
+                            inside a container.
+                          type: string
+                        request:
+                          description: |-
+                            Request is the name chosen for a request in the referenced claim.
+                            If empty, everything from the claim is made available, otherwise
+                            only the result of this request.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   limits:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Limits describes the maximum amount of compute resources allowed.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                     type: object
-                    properties:
-                      cpu:
-                        type: string
-                        default: "500m"
-                      memory:
-                        type: string
-                        default: "512Mi"
-          status:
-            description: Status defines the observed state of SqliteDatabase
-            type: object
-            properties:
-              phase:
-                type: string
-                description: Current phase of the database
-                enum: ["Pending", "Running", "Failed", "Terminating"]
-              message:
-                type: string
-                description: Human-readable message about the current status
-              replicas:
-                type: integer
-                description: Number of active replicas
-              lastBackup:
-                type: string
-                format: date-time
-                description: Timestamp of the last successful backup
-              endpoints:
+                  requests:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: |-
+                      Requests describes the minimum amount of compute resources required.
+                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                    type: object
                 type: object
+              sqliteRest:
+                description: SQLite REST API configuration
+                properties:
+                  allowedTables:
+                    description: List of tables allowed for API access
+                    items:
+                      type: string
+                    type: array
+                  authSecret:
+                    description: Name of Secret containing JWT token/key
+                    type: string
+                  enabled:
+                    default: true
+                    description: Enable sqlite-rest API
+                    type: boolean
+                  metrics:
+                    description: Metrics configuration
+                    properties:
+                      enabled:
+                        default: true
+                        description: Enable metrics
+                        type: boolean
+                      port:
+                        default: 8081
+                        description: Port for metrics
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                    required:
+                    - enabled
+                    - port
+                    type: object
+                  port:
+                    default: 8080
+                    description: Port for sqlite-rest API
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                required:
+                - enabled
+                - port
+                type: object
+            type: object
+          status:
+            description: SqliteDatabaseStatus defines the observed state of SqliteDatabase.
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of an object's state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              endpoints:
                 description: API endpoints information
                 properties:
-                  rest:
-                    type: string
-                    description: REST API endpoint URL
                   metrics:
-                    type: string
                     description: Metrics endpoint URL
+                    type: string
+                  rest:
+                    description: REST API endpoint URL
+                    type: string
+                type: object
+              lastBackup:
+                description: Timestamp of the last successful backup
+                format: date-time
+                type: string
+              message:
+                description: Human-readable message about the current status
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller
+                format: int64
+                type: integer
+              phase:
+                description: Current phase of the database
+                enum:
+                - Pending
+                - Running
+                - Failed
+                - Terminating
+                type: string
+              replicas:
+                description: Number of active replicas
+                format: int32
+                type: integer
+            type: object
         type: object
     served: true
     storage: true

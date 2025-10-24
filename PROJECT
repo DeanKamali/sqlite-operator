@@ -4,17 +4,20 @@
 # More info: https://book.kubebuilder.io/reference/project-config.html
 domain: sqlite.io
 layout:
-- ansible.sdk.operatorframework.io/v1
+- go.kubebuilder.io/v4
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: sqlite-operator
+projectName: sqlite-operator-go
+repo: github.com/sqlite-operator/sqlite-operator
 resources:
 - api:
     crdVersion: v1
     namespaced: true
+  controller: true
   domain: sqlite.io
   group: database
   kind: SqliteDatabase
+  path: github.com/sqlite-operator/sqlite-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

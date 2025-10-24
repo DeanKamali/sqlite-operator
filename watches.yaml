@@ -1,7 +1,0 @@
----
-# Use the 'create api' subcommand to add watches to this file.
-- version: v1alpha1
-  group: database.sqlite.io
-  kind: SqliteDatabase
-  role: sqlitedatabase
-# +kubebuilder:scaffold:watch

@@ -4,54 +4,68 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
-  ##
-  ## Base operator rules
-  ##
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-      - pods
-      - pods/exec
-      - pods/log
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-      - daemonsets
-      - replicasets
-      - statefulsets
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  ##
-  ## Rules for database.sqlite.io/v1alpha1, Kind: SqliteDatabase
-  ##
-  - apiGroups:
-      - database.sqlite.io
-    resources:
-      - sqlitedatabases
-      - sqlitedatabases/status
-      - sqlitedatabases/finalizers
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-# +kubebuilder:scaffold:rules
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - persistentvolumeclaims
+  - secrets
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - database.sqlite.io
+  resources:
+  - sqlitedatabases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - database.sqlite.io
+  resources:
+  - sqlitedatabases/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - database.sqlite.io
+  resources:
+  - sqlitedatabases/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

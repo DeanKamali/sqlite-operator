@@ -2,13 +2,12 @@ apiVersion: database.sqlite.io/v1alpha1
 kind: SqliteDatabase
 metadata:
   labels:
-    app.kubernetes.io/name: sqlite-operator
+    app.kubernetes.io/name: sqlite-operator-go
     app.kubernetes.io/managed-by: kustomize
   name: sqlitedatabase-sample
 spec:
   database:
     name: "app.db"
-    initScript: "app-init-script"
     storage:
       size: "2Gi"
       storageClass: "fast-ssd"
