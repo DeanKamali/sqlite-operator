@@ -1,0 +1,46 @@
+apiVersion: database.sqlite.io/v1alpha1
+kind: SqliteDatabase
+metadata:
+  name: app-with-wasabi-backup
+  namespace: default
+spec:
+  database:
+    name: "app.db"
+    initScript: "app-init-script"
+    storage:
+      size: "5Gi"
+      storageClass: "wasabi-us-east-1"  # Wasabi storage class
+  litestream:
+    enabled: true
+    replicas:
+      - type: s3
+        bucket: "sb-litestream"
+        region: "us-central-1"  # Wasabi region
+        path: "sqlite-backups"
+        credentials:
+          secretName: "wasabi-credentials"
+          accessKeyField: "access-key"
+          secretKeyField: "secret-key"
+        retention: "720h"  # 30 days
+        retentionCheckInterval: "6h"
+  sqliteRest:
+    enabled: true
+    port: 8080
+    authSecret: "jwt-secret"
+    allowedTables: ["users", "products", "orders", "transactions"]
+    metrics:
+      enabled: true
+      port: 8081
+  ingress:
+    enabled: true
+    host: "api.myapp.com"
+    tls:
+      enabled: true
+      secretName: "api-tls"
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"

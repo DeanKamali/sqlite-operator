@@ -1,0 +1,205 @@
+---
+# PersistentVolumeClaim for SQLite database
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-with-wasabi-backup-db-storage
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: wasabi-us-east-1
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# ConfigMap for Litestream configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-with-wasabi-backup-litestream-config
+  namespace: default
+data:
+  litestream.yml: |
+    dbs:
+      - path: /var/lib/sqlite/app.db
+        replicas:
+          - type: s3
+            bucket: sb-litestream
+            path: sqlite-backups
+            region: us-central-1
+            endpoint: s3.us-central-1.wasabisys.com
+            retention: 720h
+            retention-check-interval: 6h
+
+---
+# ConfigMap for sqlite-rest configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-with-wasabi-backup-sqlite-rest-config
+  namespace: default
+data:
+  sqlite-rest.yml: |
+    database: /var/lib/sqlite/app.db
+    port: 8080
+    allowed_tables:
+      - users
+      - products
+      - orders
+      - transactions
+    auth:
+      enabled: true
+      jwt_secret_file: /etc/auth/token
+    metrics:
+      enabled: true
+      port: 8081
+
+---
+# Deployment for SQLite + Litestream + sqlite-rest
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-with-wasabi-backup
+  namespace: default
+  labels:
+    app.kubernetes.io/name: sqlite-database
+    app.kubernetes.io/instance: app-with-wasabi-backup
+    app.kubernetes.io/managed-by: sqlite-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sqlite-database
+      app.kubernetes.io/instance: app-with-wasabi-backup
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sqlite-database
+        app.kubernetes.io/instance: app-with-wasabi-backup
+    spec:
+      containers:
+      - name: sqlite
+        image: alpine:3.19
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/main" > /etc/apk/repositories
+            echo "http://dl-cdn.alpinelinux.org/alpine/v3.19/community" >> /etc/apk/repositories
+            apk update && apk add --no-cache sqlite
+            mkdir -p /var/lib/sqlite
+            
+            # Initialize database if it doesn't exist
+            if [ ! -f /var/lib/sqlite/app.db ]; then
+              echo "Initializing database..."
+              sqlite3 /var/lib/sqlite/app.db < /init/init.sql
+              echo "Database initialized successfully"
+              chmod 644 /var/lib/sqlite/app.db
+            fi
+            
+            echo "Database ready at /var/lib/sqlite/app.db"
+            ls -lah /var/lib/sqlite/
+            
+            # Keep container running
+            tail -f /dev/null
+        volumeMounts:
+        - name: db-storage
+          mountPath: /var/lib/sqlite
+        - name: init-script
+          mountPath: /init
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+      
+      - name: litestream
+        image: litestream/litestream:latest
+        command: ["litestream"]
+        args: ["replicate", "-config", "/etc/litestream/litestream.yml"]
+        volumeMounts:
+        - name: db-storage
+          mountPath: /var/lib/sqlite
+        - name: litestream-config
+          mountPath: /etc/litestream
+        env:
+        - name: LITESTREAM_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: wasabi-credentials
+              key: access-key
+        - name: LITESTREAM_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wasabi-credentials
+              key: secret-key
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      
+      - name: sqlite-rest
+        image: ghcr.io/b4fun/sqlite-rest/server:main
+        command: ["sqlite-rest"]
+        args: 
+          - "serve"
+          - "--database"
+          - "/var/lib/sqlite/app.db"
+          - "--port"
+          - "8080"
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: db-storage
+          mountPath: /var/lib/sqlite
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      
+      volumes:
+      - name: db-storage
+        persistentVolumeClaim:
+          claimName: app-with-wasabi-backup-db-storage
+      - name: init-script
+        configMap:
+          name: app-init-script
+      - name: litestream-config
+        configMap:
+          name: app-with-wasabi-backup-litestream-config
+
+---
+# Service for sqlite-rest API
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-with-wasabi-backup-service
+  namespace: default
+  labels:
+    app.kubernetes.io/name: sqlite-database
+    app.kubernetes.io/instance: app-with-wasabi-backup
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 8081
+    targetPort: 8081
+    protocol: TCP
+    name: metrics
+  selector:
+    app.kubernetes.io/name: sqlite-database
+    app.kubernetes.io/instance: app-with-wasabi-backup

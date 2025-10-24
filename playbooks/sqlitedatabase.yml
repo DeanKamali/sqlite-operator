@@ -1,0 +1,17 @@
+---
+- name: Deploy SqliteDatabase
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Debug variables
+      debug:
+        msg: "meta={{ ansible_operator_meta }}, spec={{ ansible_operator_spec }}"
+    
+    - name: Set variables for role
+      set_fact:
+        meta: "{{ ansible_operator_meta }}"
+        spec: "{{ ansible_operator_spec }}"
+    
+    - name: Include sqlitedatabase role
+      include_role:
+        name: sqlitedatabase

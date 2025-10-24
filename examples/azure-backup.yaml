@@ -1,0 +1,44 @@
+apiVersion: database.sqlite.io/v1alpha1
+kind: SqliteDatabase
+metadata:
+  name: app-with-azure-backup
+  namespace: default
+spec:
+  database:
+    name: "app.db"
+    storage:
+      size: "10Gi"
+      storageClass: "premium-ssd"
+  litestream:
+    enabled: true
+    replicas:
+      - type: azure
+        bucket: "myappbackups"  # Azure storage account name
+        path: "sqlite-backups"
+        credentials:
+          secretName: "azure-credentials"
+          accessKeyField: "account-name"
+          secretKeyField: "account-key"
+        retention: "168h"  # 7 days
+        retentionCheckInterval: "1h"
+  sqliteRest:
+    enabled: true
+    port: 8080
+    authSecret: "jwt-secret"
+    allowedTables: ["users", "products", "orders"]
+    metrics:
+      enabled: true
+      port: 8081
+  ingress:
+    enabled: true
+    host: "api.myapp.com"
+    tls:
+      enabled: true
+      secretName: "api-tls"
+  resources:
+    requests:
+      cpu: "300m"
+      memory: "1Gi"
+    limits:
+      cpu: "1500m"
+      memory: "4Gi"
