@@ -1,0 +1,77 @@
+# Example user application that mounts the SQLite volume
+# This demonstrates how to use the SQLite database in sidecar mode
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+  namespace: sqlite
+spec:
+  replicas: 1  # Important: Only 1 writer for SQLite safety
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: app
+        image: my-app:latest
+        env:
+        - name: DATABASE_PATH
+          value: "/data/app.db"
+        volumeMounts:
+        - name: sqlite-data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+      volumes:
+      - name: sqlite-data
+        persistentVolumeClaim:
+          claimName: sqlitedatabase-sample-db-storage  # References the PVC created by the operator
+---
+# Example of a read-only application that can safely run multiple replicas
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-reader-app
+  namespace: sqlite
+spec:
+  replicas: 3  # Multiple readers are safe
+  selector:
+    matchLabels:
+      app: my-reader-app
+  template:
+    metadata:
+      labels:
+        app: my-reader-app
+    spec:
+      containers:
+      - name: reader
+        image: my-reader-app:latest
+        env:
+        - name: DATABASE_PATH
+          value: "/data/app.db"
+        - name: READ_ONLY_MODE
+          value: "true"
+        volumeMounts:
+        - name: sqlite-data
+          mountPath: /data
+          readOnly: true  # Mount as read-only for safety
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+      volumes:
+      - name: sqlite-data
+        persistentVolumeClaim:
+          claimName: sqlitedatabase-sample-db-storage

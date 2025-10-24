@@ -61,6 +61,11 @@ type StorageConfig struct {
 
 	// Storage class for the persistent volume
 	StorageClass *string `json:"storageClass,omitempty"`
+
+	// Access mode for the persistent volume
+	// +kubebuilder:default="ReadWriteMany"
+	// +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnlyMany
+	AccessMode string `json:"accessMode,omitempty"`
 }
 
 // LitestreamConfig defines Litestream replication configuration
@@ -120,7 +125,7 @@ type CredentialsConfig struct {
 // SqliteRestConfig defines sqlite-rest API configuration
 type SqliteRestConfig struct {
 	// Enable sqlite-rest API
-	// +kubebuilder:default=true
+	// +kubebuilder:default=false
 	Enabled bool `json:"enabled"`
 
 	// Port for sqlite-rest API

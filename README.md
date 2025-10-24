@@ -1,16 +1,17 @@
 # SQLite Operator
 
-A Kubernetes operator for managing SQLite databases with Litestream replication and sqlite-rest API exposure. Built with Go and the Operator SDK for high performance and reliability.
+A Kubernetes operator for managing SQLite databases with Litestream replication in **sidecar mode**. Built with Go and the Operator SDK for high performance and reliability.
 
 ## Features
 
-- **SQLite Database Management**: Deploy and manage SQLite databases with persistent storage
+- **Sidecar Mode**: Users mount the SQLite volume directly in their application pods
+- **ReadWriteMany Support**: Compatible with distributed filesystems like JuiceFS
 - **Litestream Replication**: Automatic backup and replication to multiple storage backends:
   - Amazon S3
   - Azure Blob Storage
   - Google Cloud Storage
   - Local storage
-- **REST API**: Expose SQLite databases via RESTful API using sqlite-rest
+- **Optional REST API**: Expose SQLite databases via RESTful API using sqlite-rest (disabled by default)
 - **Authentication**: JWT-based authentication for API access
 - **Ingress Support**: External access with TLS termination
 - **Monitoring**: Prometheus metrics and health checks
@@ -74,6 +75,57 @@ kubectl get svc my-database-service
 curl -H "Authorization: Bearer $JWT_TOKEN" \
   http://my-database-service.default.svc.cluster.local:8080/users
 ```
+
+## Sidecar Mode Usage
+
+The SQLite operator runs in **sidecar mode** by default, where users mount the SQLite volume directly in their application pods. This provides better performance and flexibility compared to REST API access.
+
+### How It Works
+
+1. **Operator creates a PVC** with ReadWriteMany access mode (compatible with JuiceFS)
+2. **Litestream pod** runs for S3 replication and backup
+3. **Init container** creates an empty database if needed
+4. **User applications** mount the same PVC to access SQLite directly
+
+### Example: User Application Deployment
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 1  # Important: Only 1 writer for SQLite safety
+  template:
+    spec:
+      containers:
+      - name: app
+        image: my-app:latest
+        env:
+        - name: DATABASE_PATH
+          value: "/data/app.db"
+        volumeMounts:
+        - name: sqlite-data
+          mountPath: /data
+      volumes:
+      - name: sqlite-data
+        persistentVolumeClaim:
+          claimName: sqlitedatabase-sample-db-storage  # References the PVC created by the operator
+```
+
+### Safety Considerations
+
+- **Single Writer**: Only run 1 replica of applications that write to SQLite
+- **Multiple Readers**: You can safely run multiple read-only applications
+- **ReadWriteMany**: Use distributed filesystems like JuiceFS for multi-pod access
+- **Backup**: Litestream provides continuous backup to S3
+
+### When to Enable REST API
+
+Enable `sqliteRest` only when you need:
+- External API access to your database
+- Multiple applications accessing the same database via HTTP
+- Integration with existing REST-based systems
 
 ## Configuration
 

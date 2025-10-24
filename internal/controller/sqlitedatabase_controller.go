@@ -181,16 +181,21 @@ func (r *SqliteDatabaseReconciler) setDefaults(sqliteDB *databasev1alpha1.Sqlite
 		}
 	}
 
-	// Set default sqlite-rest enabled if not specified
+	// Set default sqlite-rest disabled if not specified (sidecar mode)
 	if sqliteDB.Spec.SqliteRest == nil {
 		sqliteDB.Spec.SqliteRest = &databasev1alpha1.SqliteRestConfig{
-			Enabled: true,
+			Enabled: false,
 			Port:    8080,
 			Metrics: &databasev1alpha1.MetricsConfig{
 				Enabled: true,
 				Port:    8081,
 			},
 		}
+	}
+
+	// Set default access mode to ReadWriteMany for sidecar mode
+	if sqliteDB.Spec.Database.Storage.AccessMode == "" {
+		sqliteDB.Spec.Database.Storage.AccessMode = "ReadWriteMany"
 	}
 
 	// Set default Ingress disabled if not specified
@@ -203,6 +208,17 @@ func (r *SqliteDatabaseReconciler) setDefaults(sqliteDB *databasev1alpha1.Sqlite
 
 // reconcilePVC creates or updates the PersistentVolumeClaim
 func (r *SqliteDatabaseReconciler) reconcilePVC(ctx context.Context, sqliteDB *databasev1alpha1.SqliteDatabase) error {
+	// Convert string to access mode
+	accessMode := corev1.ReadWriteOnce
+	switch sqliteDB.Spec.Database.Storage.AccessMode {
+	case "ReadWriteMany":
+		accessMode = corev1.ReadWriteMany
+	case "ReadOnlyMany":
+		accessMode = corev1.ReadOnlyMany
+	case "ReadWriteOnce":
+		accessMode = corev1.ReadWriteOnce
+	}
+
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-db-storage", sqliteDB.Name),
@@ -214,7 +230,7 @@ func (r *SqliteDatabaseReconciler) reconcilePVC(ctx context.Context, sqliteDB *d
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse(sqliteDB.Spec.Database.Storage.Size),
@@ -405,8 +421,9 @@ func (r *SqliteDatabaseReconciler) reconcileDeployment(ctx context.Context, sqli
 					},
 				},
 				Spec: corev1.PodSpec{
-					Containers: r.buildContainers(sqliteDB),
-					Volumes:    r.buildVolumes(sqliteDB),
+					InitContainers: r.buildInitContainers(sqliteDB),
+					Containers:     r.buildContainers(sqliteDB),
+					Volumes:        r.buildVolumes(sqliteDB),
 				},
 			},
 		},
@@ -419,36 +436,49 @@ func (r *SqliteDatabaseReconciler) reconcileDeployment(ctx context.Context, sqli
 	return err
 }
 
-// buildContainers builds the container specifications
-func (r *SqliteDatabaseReconciler) buildContainers(sqliteDB *databasev1alpha1.SqliteDatabase) []corev1.Container {
-	containers := []corev1.Container{}
-
-	// SQLite container
-	sqliteContainer := corev1.Container{
-		Name:    "sqlite",
-		Image:   "keinos/sqlite3:latest",
-		Command: []string{"/bin/sh", "-c"},
-		Args:    []string{r.buildSqliteInitScript(sqliteDB)},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "db-storage",
-				MountPath: "/var/lib/sqlite",
+// buildInitContainers builds the init container specifications
+func (r *SqliteDatabaseReconciler) buildInitContainers(sqliteDB *databasev1alpha1.SqliteDatabase) []corev1.Container {
+	initContainers := []corev1.Container{
+		{
+			Name:    "init-db",
+			Image:   "keinos/sqlite3:latest",
+			Command: []string{"/bin/sh", "-c"},
+			Args: []string{fmt.Sprintf(`
+				set -e
+				mkdir -p /var/lib/sqlite
+				if [ ! -f /var/lib/sqlite/%s ]; then
+					echo "Creating empty database..."
+					sqlite3 /var/lib/sqlite/%s "SELECT 1;"
+					echo "Database created at /var/lib/sqlite/%s"
+				else
+					echo "Database already exists"
+				fi`, sqliteDB.Spec.Database.Name, sqliteDB.Spec.Database.Name, sqliteDB.Spec.Database.Name)},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "db-storage",
+					MountPath: "/var/lib/sqlite",
+				},
 			},
 		},
 	}
 
-	if sqliteDB.Spec.Resources != nil {
-		sqliteContainer.Resources = *sqliteDB.Spec.Resources
-	}
-
+	// Optionally add init script volume mount if configured
 	if sqliteDB.Spec.Database.InitScript != nil {
-		sqliteContainer.VolumeMounts = append(sqliteContainer.VolumeMounts, corev1.VolumeMount{
+		initContainers[0].VolumeMounts = append(initContainers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      "init-script",
 			MountPath: "/init",
 		})
+		initContainers[0].Args[0] = r.buildSqliteInitScript(sqliteDB)
 	}
 
-	containers = append(containers, sqliteContainer)
+	return initContainers
+}
+
+// buildContainers builds the container specifications
+func (r *SqliteDatabaseReconciler) buildContainers(sqliteDB *databasev1alpha1.SqliteDatabase) []corev1.Container {
+	containers := []corev1.Container{}
+
+	// Note: SQLite is now handled by init container for sidecar mode
 
 	// Litestream container if enabled
 	if sqliteDB.Spec.Litestream != nil && sqliteDB.Spec.Litestream.Enabled {

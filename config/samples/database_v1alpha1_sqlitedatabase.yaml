@@ -10,9 +10,10 @@ spec:
     name: "app.db"
     storage:
       size: "2Gi"
-      storageClass: "fast-ssd"
+      storageClass: "juicefs"  # JuiceFS for ReadWriteMany support
+      accessMode: "ReadWriteMany"  # Default for sidecar mode
   litestream:
-    enabled: true
+    enabled: true  # Default - always enabled for replication
     replicas:
       - type: s3
         bucket: "my-backup-bucket"
@@ -24,20 +25,22 @@ spec:
           secretKeyField: "secret-key"
         retention: "168h"  # 7 days
         retentionCheckInterval: "1h"
-  sqliteRest:
-    enabled: true
-    port: 8080
-    authSecret: "jwt-secret"
-    allowedTables: ["users", "products", "orders"]
-    metrics:
-      enabled: true
-      port: 8081
-  ingress:
-    enabled: true
-    host: "api.example.com"
-    tls:
-      enabled: true
-      secretName: "api-tls"
+  # sqliteRest is disabled by default in sidecar mode
+  # Uncomment below to enable REST API (optional)
+  # sqliteRest:
+  #   enabled: true
+  #   port: 8080
+  #   authSecret: "jwt-secret"
+  #   allowedTables: ["users", "products", "orders"]
+  #   metrics:
+  #     enabled: true
+  #     port: 8081
+  # ingress:
+  #   enabled: true
+  #   host: "api.example.com"
+  #   tls:
+  #     enabled: true
+  #     secretName: "api-tls"
   resources:
     requests:
       cpu: "100m"

@@ -52,6 +52,14 @@ spec:
                   storage:
                     description: Storage configuration for the database
                     properties:
+                      accessMode:
+                        default: ReadWriteMany
+                        description: Access mode for the persistent volume
+                        enum:
+                        - ReadWriteOnce
+                        - ReadWriteMany
+                        - ReadOnlyMany
+                        type: string
                       size:
                         default: 1Gi
                         description: Size of the persistent volume
@@ -231,7 +239,7 @@ spec:
                     description: Name of Secret containing JWT token/key
                     type: string
                   enabled:
-                    default: true
+                    default: false
                     description: Enable sqlite-rest API
                     type: boolean
                   metrics:

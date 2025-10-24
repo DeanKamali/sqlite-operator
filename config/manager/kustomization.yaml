@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: docker.io/stackblaze/sqlite-operator
-  newTag: v0.1.13
+  newTag: v0.1.14
